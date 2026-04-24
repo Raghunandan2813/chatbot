@@ -8,3 +8,8 @@ fastapi
 uvicorn
 groq 
 sse_starlette
+bs4
+pypdf
+langchain-text-splitters
+chromadb
+faiss-cpu
