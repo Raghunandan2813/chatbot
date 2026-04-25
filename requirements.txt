@@ -13,3 +13,9 @@ pypdf
 langchain-text-splitters
 chromadb
 faiss-cpu
+cassio
+beautifulsoup4
+langchain-groq
+wikipedia
+arxiv
+langchainhub
