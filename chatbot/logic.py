@@ -16,7 +16,15 @@ from mcp.client.stdio import stdio_client, StdioServerParameters
 # ENV SETUP
 # -------------------------
 load_dotenv()
-os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
+import os
+
+# ✅ Load API key safely
+api_key = os.getenv("GROQ_API_KEY")
+
+if not api_key:
+    raise ValueError("❌ GROQ_API_KEY not found. Set it in Streamlit secrets.")
+
+print("API KEY LOADED:", api_key[:8])  # debug
 
 # -------------------------
 # CONFIG (Portable for Deployment)
@@ -35,7 +43,12 @@ else:
     SERVER_SCRIPT = os.getenv("SERVER_SCRIPT", os.path.join(PARENT_DIR, "expense-tracker", "main.py"))
 
 # Initialize LLM
-llm = ChatGroq(model="llama-3.1-8b-instant")
+
+
+llm = ChatGroq(
+    model="llama-3.1-8b-instant",
+    api_key=api_key
+)
 
 async def extract_expense_details(user_input):
     today = datetime.now().strftime("%Y-%m-%d")
