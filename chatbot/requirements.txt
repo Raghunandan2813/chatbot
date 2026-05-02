@@ -1,0 +1,8 @@
+streamlit
+langchain-groq
+langchain-core
+mcp
+python-dotenv
+aiosqlite
+matplotlib
+fastmcp

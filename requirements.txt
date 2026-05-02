@@ -19,3 +19,4 @@ langchain-groq
 wikipedia
 arxiv
 langchainhub
+mcp
