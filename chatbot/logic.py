@@ -3,8 +3,8 @@ import json
 import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
-
-from langchain_groq import ChatGroq
+import streamlit as st
+from langchain_community.chat_models import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 
@@ -18,13 +18,7 @@ from mcp.client.stdio import stdio_client, StdioServerParameters
 load_dotenv()
 import os
 
-# ✅ Load API key safely
-api_key = os.getenv("GROQ_API_KEY")
-
-if not api_key:
-    raise ValueError("❌ GROQ_API_KEY not found. Set it in Streamlit secrets.")
-
-print("API KEY LOADED:", api_key[:8])  # debug
+# Using Ollama - no API key needed
 
 # -------------------------
 # CONFIG (Portable for Deployment)
@@ -45,9 +39,8 @@ else:
 # Initialize LLM
 
 
-llm = ChatGroq(
-    model="llama-3.1-8b-instant",
-    api_key=api_key
+llm = ChatOllama(
+    model="mistral"
 )
 
 async def extract_expense_details(user_input):
@@ -78,50 +71,57 @@ async def call_mcp(user_input):
 
                 text = user_input.lower()
 
-                # Intent classification
-                intent_prompt = (
-                    "Classify user intent into ONE of these: \n"
-                    "- 'ADD': User is describing a purchase or expense they just made.\n"
-                    "- 'LIST': User explicitly asks to see, show, list, or view their transactions/expenses.\n"
-                    "- 'SUMMARY': User asks for a summary, report, analysis, or graph of spending.\n"
-                    "- 'CHAT': General greeting, questions about who you are, math, or anything else.\n\n"
-                    f"Message: {user_input}\n\nIntent:"
-                )
-                intent_resp = await llm.ainvoke(intent_prompt)
-                intent = intent_resp.content.strip().upper()
-
-                # Overrides
+                # 1. Fast Path / Rule-based checks (No AI needed)
+                intent = None
                 if any(word in text for word in ["summarize", "summary", "report", "total", "analyze"]):
                     intent = "SUMMARY"
                 elif any(word in text for word in ["show", "list", "view history", "expenses"]):
-                    if "ADD" not in intent:
-                        intent = "LIST"
+                    intent = "LIST"
+                
+                # 2. If not determined by rules, use AI to classify and extract in one go
+                if not intent:
+                    prompt = (
+                        "Analyze this message and return a JSON object. "
+                        "Determine the intent ('ADD', 'CHAT').\n"
+                        "- 'ADD': User is describing a purchase or expense.\n"
+                        "- 'CHAT': General conversation, questions, etc.\n\n"
+                        "If intent is 'ADD', also extract: 'amount' (float), 'category' (string), 'date' (YYYY-MM-DD), 'note' (string).\n"
+                        f"Today's date: {datetime.now().strftime('%Y-%m-%d')}\n"
+                        f"Message: {user_input}\n"
+                        "Return ONLY a JSON object with 'intent' and optionally 'amount', 'category', 'date', 'note'."
+                    )
+                    
+                    chain = ChatPromptTemplate.from_template("{prompt}") | llm | JsonOutputParser()
+                    try:
+                        resp_data = await chain.ainvoke({"prompt": prompt})
+                        intent = resp_data.get("intent", "CHAT").upper()
+                    except Exception:
+                        # Fallback if JSON parsing fails
+                        resp = await llm.ainvoke(user_input)
+                        return resp.content
+                
+                if intent == "SUMMARY":
+                    return await session.call_tool("summarize", {"start_date": "2000-01-01", "end_date": "2100-12-31"})
 
-                if "ADD" in intent:
-                    details = await extract_expense_details(user_input)
-                    if details.get("amount"):
+                elif intent == "LIST":
+                    return await session.call_tool("list_expenses", {"start_date": "2000-01-01", "end_date": "2100-12-31"})
+
+                elif intent == "ADD":
+                    if "resp_data" in locals() and resp_data.get("amount"):
                         result = await session.call_tool(
                             "add_expense",
                             {
-                                "date": details.get("date") or datetime.now().strftime("%Y-%m-%d"),
-                                "amount": float(details["amount"]),
-                                "category": (details.get("category") or "Other").strip().title(),
-                                "note": details.get("note") or user_input
+                                "date": resp_data.get("date") or datetime.now().strftime("%Y-%m-%d"),
+                                "amount": float(resp_data["amount"]),
+                                "category": (resp_data.get("category") or "Other").strip().title(),
+                                "note": resp_data.get("note") or user_input
                             }
                         )
-                        # Clear cache so dashboard refreshes instantly
                         st.cache_data.clear()
-                        return f"✅ Added expense: ₹{details['amount']} for {details['category']}."
+                        return f"✅ Added expense: ₹{resp_data['amount']} for {resp_data['category']}."
                     else:
                         response = await llm.ainvoke(user_input)
                         return response.content
-
-                elif "SUMMARY" in intent:
-                    return await session.call_tool("summarize", {"start_date": "2000-01-01", "end_date": "2100-12-31"})
-
-                elif "LIST" in intent:
-                    return await session.call_tool("list_expenses", {"start_date": "2000-01-01", "end_date": "2100-12-31"})
-
                 else:
                     response = await llm.ainvoke(user_input)
                     return response.content

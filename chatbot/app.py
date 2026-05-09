@@ -38,9 +38,19 @@ def render_message(response):
 def convert_to_csv(data):
     if not data: return None
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=data[0].keys())
+    # Explicitly define fieldnames with capital letters for the CSV header
+    fieldnames = ["Date", "Amount", "Category", "Subcategory", "Note"]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
     writer.writeheader()
-    writer.writerows(data)
+    
+    for row in data:
+        writer.writerow({
+            "Date": row.get("date"),
+            "Amount": row.get("amount"),
+            "Category": row.get("category"),
+            "Subcategory": row.get("subcategory"),
+            "Note": row.get("note")
+        })
     return output.getvalue()
 
 # Dashboard Header
